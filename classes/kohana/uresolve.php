@@ -354,6 +354,8 @@ Class Kohana_Uresolve
 	}
 	if ( !empty( $this->path ) )
 		$url .= $this->path;
+	else
+		$url .= '/';
 	if ( count( $this->query ) )
         {
 		$url .= '?' . http_build_query ($this->query);
