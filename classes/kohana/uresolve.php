@@ -11,6 +11,7 @@ Class Kohana_Uresolve
     protected $query = array ();
     protected $fragment = NULL;
 
+    // @xxx: quick fixes
     protected $hostname = NULL;
     protected $subdomain = NULL;
 
@@ -86,7 +87,10 @@ Class Kohana_Uresolve
 	// Host name from RFC1035.  Technically, must start with a letter.
 	// Relax that restriction to better parse URL structure, then
 	// leave host name validation to application.
-	$xhost_name    = '([a-zA-Z\d-.%]+)';
+
+	// @todo: rewrite, use unicode parsing and idn_* routines if characters are non-ASCII codepoints
+//	$xhost_name    = '([a-zA-Z\d-.%åÅäÄöÖ]+)';
+	$xhost_name    = '([\w\d-.%]+)';
 
 	// Authority from RFC3986.  Skip IP future.
 	$xhost         = '(' . $xhost_name . '|' . $xipv4 . '|' . $xipv6 . ')';
@@ -111,7 +115,7 @@ Class Kohana_Uresolve
 
 
 	// Split the URL into components.
-	if ( !preg_match( '!' . $xurl . '!', $url, $m ) )
+	if ( !preg_match( '!' . $xurl . '!u', $url, $m ) )
         {
             throw new Kohana_Exception_Uresolve ('unable to split');
         }
@@ -124,9 +128,9 @@ Class Kohana_Uresolve
 	}
 	if ( !empty($m[10]) )		$res['password']    = $m[11];
 
-	if ( !empty($m[13]) )		$res['host'] = $m[13];
-	else if ( !empty($m[14]) )	$res['host']    = $m[14];
-	else if ( !empty($m[16]) )	$res['host']    = $m[16];
+	if ( !empty($m[13]) )		$res['host']    = idn_to_ascii (utf8_decode ($m[13]));
+	else if ( !empty($m[14]) )	$res['host']    = idn_to_ascii (utf8_decode ($m[14]));
+	else if ( !empty($m[16]) )	$res['host']    = idn_to_ascii (utf8_decode ($m[16]));
 	else if ( !empty( $m[5] ) )	$res['host']    = '';
 	if ( !empty($m[17]) )		$res['port']    = $m[18];
 
@@ -190,15 +194,29 @@ Class Kohana_Uresolve
         return $this->subdomain;
     }
 
-    public function hostname ()
+    public function hostname ($idn_encode = true)
     {
-	if ( ! is_null ($this->hostname))
+	if (! $idn_encode)
 	{
-	    return $this->hostname;
+	    return $this->host;
 	}
 
         $parts = explode ('.', $this->host);
 	$count = count ($parts);
+
+	if (true == $idn_encode)
+	{
+		// @fixme: this should be implemented properly
+		if ($count < 2)
+		{
+			return '';
+		}
+		else
+		{
+			return idn_to_utf8 (implode ('.', array_slice ($parts, $count - 2, $count)));
+		}
+	}
+
 	if ($count < 2)
 	{
 	    $this->hostname = '';
@@ -232,6 +250,10 @@ Class Kohana_Uresolve
 	    {
                 return http_build_query ($this->query);
 	    }
+	    else if ($name == 'host')
+	    {
+		return idn_to_utf8 ($this->host);
+	    }
 
             return $this->$name;
         }
@@ -239,13 +261,15 @@ Class Kohana_Uresolve
         switch ($name)
         {
             case 'scheme':
-            case 'host':
             case 'port':
             case 'user':
             case 'password':
             case 'fragment':
                 $this->$name = $arguments[0];
                 break;
+            case 'host':
+		$this->host = idn_to_ascii (utf8_decode ($arguments[0]));
+	        break;
             case 'path':
                 $this->path = self::removeDotSegments ($arguments[0]);
                 break;
@@ -292,6 +316,11 @@ Class Kohana_Uresolve
 
     public function __get ($name)
     {
+	if ($name == 'host')
+	{
+		return idn_to_utf8 ($this->host);
+	}
+
         return $this->$name;
     }
 
@@ -369,18 +398,6 @@ Class Kohana_Uresolve
 
     public function resolve ($url)
     {
-    	// TODO: make this useful
-/*        if ($url instanceof get_class ($this))
-	{
-		foreach (array ('scheme', 'host', 'port', 'user', 'password', 'path', 'query', 'fragment', ) as $name)
-		{
-			if ( ! empty ($url->$name))
-			{
-				$this->$name = $url->$name;
-			}
-		}
-	} */
-
 	$target = self::parseString ($url);
 	if ( ! empty ($target['scheme']))
 	{
@@ -424,3 +441,4 @@ Class Kohana_Uresolve
 	return $outPath;
     }
 }
+
